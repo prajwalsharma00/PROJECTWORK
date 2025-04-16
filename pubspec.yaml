@@ -10,10 +10,13 @@ dependencies:
   flutter:
     sdk: flutter
   intl: ^0.18.1
+  shared_preferences: ^2.0.15
   path_provider: ^2.1.1
+  provider: ^6.0.0
   connectivity_plus: ^4.0.2
 
 flutter:
   uses-material-design: true
   assets:
     - assets/config.txt
+    - assets/todolist.png
