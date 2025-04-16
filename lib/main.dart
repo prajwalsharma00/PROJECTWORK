@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+
+// Global value notifier to hold the current theme mode for toggling.
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 
 void main() {
   runApp(const TodoApp());
@@ -13,24 +17,85 @@ void main() {
 
 class TodoApp extends StatelessWidget {
   const TodoApp({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Todo List',
-      // We set a light grey background to keep everything bright, clean, and readable.
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.grey[50],
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      home: const TodoHomePage(),
-      debugShowCheckedModeBanner: false,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, currentMode, _) {
+        return MaterialApp(
+          title: 'Todo List',
+          // Light theme
+          theme: ThemeData(
+            brightness: Brightness.light,
+            primarySwatch: Colors.blue,
+            scaffoldBackgroundColor: Colors.grey[50],
+            visualDensity: VisualDensity.adaptivePlatformDensity,
+          ),
+          // Dark theme with improved background and text colors
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor: const Color(0xFF121212),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF1F1F1F),
+            ),
+            cardColor: const Color(0xFF2A2A2A),
+            textTheme: ThemeData.dark().textTheme.copyWith(
+              // Adjust as desired for better contrast
+              bodyLarge: const TextStyle(color: Colors.white),
+              bodyMedium: const TextStyle(color: Colors.white70),
+              titleLarge: const TextStyle(color: Colors.white),
+              titleMedium: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          themeMode: currentMode,
+          debugShowCheckedModeBanner: false,
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
 
+/// SplashScreen that covers the whole page with an image from 'assets/todolist.png'
+/// After a short delay, navigates to the TodoHomePage.
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  _SplashScreenState createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Show splash for 2 seconds, then navigate.
+    Timer(const Duration(seconds: 2), () {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const TodoHomePage()),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SizedBox.expand(
+        child: Image.asset(
+          'assets/todolist.png',
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
+}
+
+/// Main Todo Home Page with server sync, local storage, connectivity,
+/// and a theme toggle button in the AppBar.
 class TodoHomePage extends StatefulWidget {
   const TodoHomePage({super.key});
+
   @override
   _TodoHomePageState createState() => _TodoHomePageState();
 }
@@ -105,7 +170,7 @@ class _TodoHomePageState extends State<TodoHomePage>
         });
       }
     } catch (e) {
-      print('Error loading config: $e');
+      debugPrint('Error loading config: $e');
     }
   }
 
@@ -126,7 +191,8 @@ class _TodoHomePageState extends State<TodoHomePage>
     final directory = await getApplicationDocumentsDirectory();
     final file = File('${directory.path}/tasks.json');
     await file.writeAsString(
-        json.encode(_allTasks.map((task) => task.toJson()).toList()));
+      json.encode(_allTasks.map((task) => task.toJson()).toList()),
+    );
   }
 
   Future<String> _recvData(Socket socket) async {
@@ -148,15 +214,15 @@ class _TodoHomePageState extends State<TodoHomePage>
   Future<String> _sendCommand(String command) async {
     String response = "";
     try {
-      print('Sending command: $command');
+      debugPrint('Sending command: $command');
       final socket = await Socket.connect(_serverAddress, int.parse(_serverPort))
           .timeout(const Duration(seconds: 5));
       socket.write(command);
       response = await _recvData(socket);
-      print('Full response received:\n$response');
+      debugPrint('Full response received:\n$response');
       socket.destroy();
     } catch (e) {
-      print('Error in _sendCommand: $e');
+      debugPrint('Error in _sendCommand: $e');
       rethrow;
     }
     return response;
@@ -186,7 +252,7 @@ class _TodoHomePageState extends State<TodoHomePage>
         _hasPendingSync = false;
       });
     } catch (e) {
-      print('Error syncing pending tasks: $e');
+      debugPrint('Error syncing pending tasks: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -200,28 +266,32 @@ class _TodoHomePageState extends State<TodoHomePage>
       await _storeServerResponse(response);
       int endIndex = response.indexOf('|END');
       if (endIndex == -1) {
-        print("Error: Server response doesn't contain '|END'. Using entire response.");
+        debugPrint(
+          "Error: Server response doesn't contain '|END'. Using entire response.",
+        );
         endIndex = response.length;
       }
       final rawData = response.substring(0, endIndex);
-      print('Data used for parsing:\n$rawData');
+      debugPrint('Data used for parsing:\n$rawData');
       if (rawData.trim().isNotEmpty) {
         final serverTasks = _parseServerData(rawData);
-        print('Parsed tasks:');
-        serverTasks.forEach((t) => print(t));
+        debugPrint('Parsed tasks:');
+        for (final t in serverTasks) {
+          debugPrint(t.toString());
+        }
         setState(() {
           _allTasks = serverTasks;
           _isConnected = true;
         });
       } else {
-        print('No tasks received from server; clearing current tasks.');
+        debugPrint('No tasks received from server; clearing current tasks.');
         setState(() {
           _allTasks = [];
         });
       }
       await _saveLocalData();
     } catch (e) {
-      print('Connection error: $e');
+      debugPrint('Connection error: $e');
       setState(() => _isConnected = false);
     } finally {
       setState(() => _isLoading = false);
@@ -233,6 +303,7 @@ class _TodoHomePageState extends State<TodoHomePage>
     final lines = data.split(RegExp(r'[\r\n]+'));
     DateTime? currentDate;
     final dateHeaderRegex = RegExp(r'^DATE,(\d{7,8})$', caseSensitive: false);
+
     for (var line in lines) {
       line = line.trim();
       if (line.isEmpty) continue;
@@ -240,17 +311,17 @@ class _TodoHomePageState extends State<TodoHomePage>
       if (match != null) {
         String dateStr = match.group(1)!;
         if (dateStr.length == 7) {
-          dateStr = "0" + dateStr;
-          print('Fixed 7-digit header to: $dateStr');
+          dateStr = "0$dateStr";
+          debugPrint('Fixed 7-digit header to: $dateStr');
         }
         final formattedDate =
             "${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}";
         currentDate = DateTime.tryParse(formattedDate);
         if (currentDate == null) {
-          print('Error parsing header date: $formattedDate. Skipping header.');
+          debugPrint('Error parsing header date: $formattedDate. Skipping header.');
           continue;
         }
-        print('Parsed header date: ${DateFormat('yyyy-MM-dd').format(currentDate)}');
+        debugPrint('Parsed header date: ${DateFormat('yyyy-MM-dd').format(currentDate)}');
         continue;
       }
       if (currentDate == null) continue;
@@ -279,8 +350,9 @@ class _TodoHomePageState extends State<TodoHomePage>
     } else {
       _pendingSyncTasks.add(newTask);
       setState(() => _hasPendingSync = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Task saved locally. Will sync when online')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task saved locally. Will sync when online')),
+      );
     }
   }
 
@@ -290,7 +362,7 @@ class _TodoHomePageState extends State<TodoHomePage>
       final state = task.isCompleted ? 'true' : 'false';
       final command = 'ADD|DATE$dateStr|TASK${task.name}!STATE$state|END';
       final response = await _sendCommand(command);
-      print('Add command response: $response');
+      debugPrint('Add command response: $response');
       final updatedTask = task.copyWith(isNew: false);
       setState(() {
         _allTasks.remove(task);
@@ -298,14 +370,16 @@ class _TodoHomePageState extends State<TodoHomePage>
       });
       await _saveLocalData();
     } catch (e) {
-      print('Error adding task to server: $e');
+      debugPrint('Error adding task to server: $e');
       rethrow;
     }
   }
 
   Future<void> _updateTask(Task oldTask, Task newTask) async {
     final updatedTask = oldTask.copyWith(
-        isCompleted: newTask.isCompleted, lastUpdated: DateTime.now());
+      isCompleted: newTask.isCompleted,
+      lastUpdated: DateTime.now(),
+    );
     setState(() {
       _allTasks.remove(oldTask);
       _allTasks.add(updatedTask);
@@ -316,8 +390,9 @@ class _TodoHomePageState extends State<TodoHomePage>
     } else {
       _pendingSyncTasks.add(updatedTask);
       setState(() => _hasPendingSync = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Update saved locally. Will sync when online')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Update saved locally. Will sync when online')),
+      );
     }
   }
 
@@ -327,9 +402,9 @@ class _TodoHomePageState extends State<TodoHomePage>
       final state = task.isCompleted ? 'true' : 'false';
       final command = 'UPDATE|DATE$dateStr|TASK${task.name}!STATE$state|END';
       final response = await _sendCommand(command);
-      print('Update command response: $response');
+      debugPrint('Update command response: $response');
     } catch (e) {
-      print('Error updating task on server: $e');
+      debugPrint('Error updating task on server: $e');
       rethrow;
     }
   }
@@ -338,7 +413,7 @@ class _TodoHomePageState extends State<TodoHomePage>
     final deletedTask = task.copyWith(isDeleted: true, lastUpdated: DateTime.now());
     setState(() {
       _allTasks.remove(task);
-      // Remove any pending sync items that match this task
+      // Also remove any pending sync items that match this task
       _pendingSyncTasks.removeWhere((t) =>
       t.name.trim().toLowerCase() == task.name.trim().toLowerCase() &&
           DateFormat('yyyyMMdd').format(t.date) ==
@@ -350,8 +425,9 @@ class _TodoHomePageState extends State<TodoHomePage>
     } else {
       _pendingSyncTasks.add(deletedTask);
       setState(() => _hasPendingSync = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Deletion saved locally. Will sync when online')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Deletion saved locally. Will sync when online')),
+      );
     }
   }
 
@@ -361,9 +437,9 @@ class _TodoHomePageState extends State<TodoHomePage>
       final state = task.isCompleted ? 'true' : 'false';
       final command = 'DELETE|DATE$dateStr|TASK${task.name}!STATE$state|END';
       final response = await _sendCommand(command);
-      print('Delete command response: $response');
+      debugPrint('Delete command response: $response');
     } catch (e) {
-      print('Error deleting task from server: $e');
+      debugPrint('Error deleting task from server: $e');
       rethrow;
     }
   }
@@ -397,23 +473,24 @@ class _TodoHomePageState extends State<TodoHomePage>
 
   @override
   Widget build(BuildContext context) {
+    // We dynamically swap out the gradient for the AppBar based on dark/light.
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final appBarGradient = isDarkMode
+        ? const LinearGradient(
+      colors: [Color(0xFF424242), Color(0xFF303030)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    )
+        : const LinearGradient(
+      colors: [Color(0xFF80DEEA), Color(0xFFE0F7FA)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+
     return Scaffold(
-      // APP BAR WITH A PASTEL CYAN GRADIENT
       appBar: AppBar(
         title: const Text('Todo List'),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                // Cyan 200 -> Cyan 50
-                Color(0xFF80DEEA),
-                Color(0xFFE0F7FA),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
+        flexibleSpace: Container(decoration: BoxDecoration(gradient: appBarGradient)),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -423,6 +500,23 @@ class _TodoHomePageState extends State<TodoHomePage>
           ],
         ),
         actions: [
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: themeNotifier,
+            builder: (context, mode, _) {
+              return IconButton(
+                icon: Icon(mode == ThemeMode.dark
+                    ? Icons.wb_sunny
+                    : Icons.nightlight_round),
+                tooltip: 'Toggle Theme Mode',
+                onPressed: () {
+                  themeNotifier.value =
+                  (themeNotifier.value == ThemeMode.dark)
+                      ? ThemeMode.light
+                      : ThemeMode.dark;
+                },
+              );
+            },
+          ),
           if (_hasPendingSync)
             const Tooltip(
               message: 'Pending sync',
@@ -476,9 +570,9 @@ class _TodoHomePageState extends State<TodoHomePage>
     DateTime selectedDate = DateTime.now();
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) {
+      builder: (ctx) {
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (ctx, setStateSB) {
             return AlertDialog(
               title: const Text('Add New Task'),
               content: Column(
@@ -494,15 +588,13 @@ class _TodoHomePageState extends State<TodoHomePage>
                     trailing: const Icon(Icons.calendar_today),
                     onTap: () async {
                       final date = await showDatePicker(
-                        context: context,
+                        context: ctx,
                         initialDate: selectedDate,
                         firstDate: DateTime.now(),
                         lastDate: DateTime.now().add(const Duration(days: 365)),
                       );
                       if (date != null) {
-                        setState(() {
-                          selectedDate = date;
-                        });
+                        setStateSB(() => selectedDate = date);
                       }
                     },
                   ),
@@ -511,13 +603,13 @@ class _TodoHomePageState extends State<TodoHomePage>
               actions: [
                 TextButton(
                   child: const Text('Cancel'),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(ctx),
                 ),
                 TextButton(
                   child: const Text('Add'),
                   onPressed: () {
                     if (nameController.text.isNotEmpty) {
-                      Navigator.pop(context, {
+                      Navigator.pop(ctx, {
                         'name': nameController.text,
                         'date': selectedDate,
                       });
@@ -541,13 +633,11 @@ class _TodoHomePageState extends State<TodoHomePage>
   }
 }
 
-// ================================================================
-// ANIMATED TASK CARD
-// Provides a playful scale + opacity transition for each task card.
-// ================================================================
+/// An animated card used for tasks (scale and opacity transitions).
 class AnimatedTaskCard extends StatefulWidget {
   final Widget child;
-  const AnimatedTaskCard({Key? key, required this.child}) : super(key: key);
+
+  const AnimatedTaskCard({super.key, required this.child});
 
   @override
   _AnimatedTaskCardState createState() => _AnimatedTaskCardState();
@@ -560,7 +650,6 @@ class _AnimatedTaskCardState extends State<AnimatedTaskCard> {
   @override
   void initState() {
     super.initState();
-    // Delay the start of the animation slightly so it doesn't clash with list build transitions.
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         setState(() {
@@ -585,9 +674,7 @@ class _AnimatedTaskCardState extends State<AnimatedTaskCard> {
   }
 }
 
-// ================================================================
-// TASK MODEL
-// ================================================================
+/// Task model representing an item on the todo list.
 class Task {
   final String name;
   final DateTime date;
@@ -632,14 +719,16 @@ class Task {
     'isDeleted': isDeleted,
   };
 
-  factory Task.fromJson(Map<String, dynamic> json) => Task(
-    name: json['name'],
-    date: DateTime.parse(json['date']),
-    isCompleted: json['isCompleted'],
-    lastUpdated: DateTime.parse(json['lastUpdated']),
-    isNew: json['isNew'] ?? false,
-    isDeleted: json['isDeleted'] ?? false,
-  );
+  factory Task.fromJson(Map<String, dynamic> json) {
+    return Task(
+      name: json['name'],
+      date: DateTime.parse(json['date']),
+      isCompleted: json['isCompleted'] ?? false,
+      lastUpdated: DateTime.parse(json['lastUpdated'] ?? DateTime.now().toString()),
+      isNew: json['isNew'] ?? false,
+      isDeleted: json['isDeleted'] ?? false,
+    );
+  }
 
   @override
   String toString() {
@@ -647,10 +736,7 @@ class Task {
   }
 }
 
-// ================================================================
-// TODAY TAB
-// Uses a cyan gradient for pending tasks, green gradient for completed tasks.
-// ================================================================
+/// TodayTab with dynamic gradients for dark/light mode.
 class TodayTab extends StatelessWidget {
   final List<Task> tasks;
   final Function(BuildContext) onAddTask;
@@ -669,34 +755,23 @@ class TodayTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final completedTasks = tasks.where((t) => t.isCompleted).toList();
     final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
+
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
           child: _buildTaskSection(
-            'Pending Tasks',
-            pendingTasks,
-            false,
             context,
-            // Container gradient for "Pending Tasks" (Cyan)
-            gradientColors: [
-              Color(0xFFB2EBF2), // Cyan 100
-              Color(0xFFE0F7FA), // Cyan 50
-            ],
-            borderColor: Colors.cyan,
+            title: 'Pending Tasks',
+            tasks: pendingTasks,
+            isCompleted: false,
           ),
         ),
         SliverToBoxAdapter(
           child: _buildTaskSection(
-            'Completed Tasks',
-            completedTasks,
-            true,
             context,
-            // Container gradient for "Completed Tasks" (Green)
-            gradientColors: [
-              Color(0xFFC8E6C9), // Green 100
-              Color(0xFFE8F5E9), // Green 50
-            ],
-            borderColor: Colors.green,
+            title: 'Completed Tasks',
+            tasks: completedTasks,
+            isCompleted: true,
           ),
         ),
       ],
@@ -704,16 +779,28 @@ class TodayTab extends StatelessWidget {
   }
 
   Widget _buildTaskSection(
-      String title,
-      List<Task> tasks,
-      bool isCompleted,
       BuildContext context, {
-        required List<Color> gradientColors,
-        required Color borderColor,
+        required String title,
+        required List<Task> tasks,
+        required bool isCompleted,
       }) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // Choose gradient and border color based on isCompleted and theme mode.
+    final List<Color> gradientColors = isCompleted
+        ? (isDarkMode
+        ? const [Color(0xFF388E3C), Color(0xFF2E7D32)]
+        : const [Color(0xFFC8E6C9), Color(0xFFE8F5E9)])
+        : (isDarkMode
+        ? const [Color(0xFF37474F), Color(0xFF455A64)]
+        : const [Color(0xFFB2EBF2), Color(0xFFE0F7FA)]);
+
+    final Color borderColor = isCompleted
+        ? (isDarkMode ? Colors.lightGreenAccent : Colors.green)
+        : (isDarkMode ? Colors.tealAccent : Colors.cyan);
+
     return Container(
       margin: const EdgeInsets.all(12.0),
-      // Joyful gradient with a visible border.
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: gradientColors,
@@ -726,13 +813,14 @@ class TodayTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section header.
+          // Section header
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Text(
               title,
-              style:
-              Theme.of(context).textTheme.titleLarge?.copyWith(color: borderColor),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: borderColor,
+              ),
             ),
           ),
           if (tasks.isEmpty)
@@ -748,6 +836,13 @@ class TodayTab extends StatelessWidget {
   }
 
   Widget _buildTaskItem(Task task, bool isCompleted, BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // Card color changes for pending vs completed in dark mode.
+    final Color cardColor = isCompleted
+        ? (isDarkMode ? Colors.green[800]! : Colors.green[100]!)
+        : (isDarkMode ? Colors.blueGrey[800]! : Colors.cyan[100]!);
+
     return Dismissible(
       key: Key('${task.name}_${DateFormat('yyyyMMdd').format(task.date)}'),
       direction: DismissDirection.endToStart,
@@ -763,16 +858,16 @@ class TodayTab extends StatelessWidget {
       confirmDismiss: (direction) async {
         return await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (ctx) => AlertDialog(
             title: const Text('Confirm'),
             content: const Text('Are you sure you want to delete this task?'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
+                onPressed: () => Navigator.of(ctx).pop(false),
                 child: const Text('Cancel'),
               ),
               TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: () => Navigator.of(ctx).pop(true),
                 child: const Text('Delete'),
               ),
             ],
@@ -784,19 +879,22 @@ class TodayTab extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Card(
-            // Subtle color for each card to match section gradient
-            color: isCompleted ? Colors.green[100] : Colors.cyan[100],
+            color: cardColor,
             elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: ListTile(
               leading: IconButton(
                 icon: Icon(
                   isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: isCompleted ? Colors.green : Colors.grey,
+                  color: isCompleted ? Colors.greenAccent : Colors.white,
                 ),
                 onPressed: () {
-                  final updatedTask =
-                  task.copyWith(isCompleted: !isCompleted, lastUpdated: DateTime.now());
+                  final updatedTask = task.copyWith(
+                    isCompleted: !isCompleted,
+                    lastUpdated: DateTime.now(),
+                  );
                   onUpdateTask(task, updatedTask);
                 },
               ),
@@ -805,23 +903,24 @@ class TodayTab extends StatelessWidget {
                 style: TextStyle(
                   decoration: isCompleted ? TextDecoration.lineThrough : null,
                   fontSize: 16,
+                  color: Colors.white,
                 ),
               ),
               trailing: IconButton(
-                icon: const Icon(Icons.delete),
+                icon: const Icon(Icons.delete, color: Colors.white),
                 onPressed: () async {
                   final confirmed = await showDialog<bool>(
                     context: context,
-                    builder: (context) => AlertDialog(
+                    builder: (ctx) => AlertDialog(
                       title: const Text('Confirm'),
                       content: const Text('Are you sure you want to delete this task?'),
                       actions: [
                         TextButton(
-                          onPressed: () => Navigator.of(context).pop(false),
+                          onPressed: () => Navigator.of(ctx).pop(false),
                           child: const Text('Cancel'),
                         ),
                         TextButton(
-                          onPressed: () => Navigator.of(context).pop(true),
+                          onPressed: () => Navigator.of(ctx).pop(true),
                           child: const Text('Delete'),
                         ),
                       ],
@@ -840,10 +939,7 @@ class TodayTab extends StatelessWidget {
   }
 }
 
-// ================================================================
-// HISTORY TAB
-// Uses a teal gradient for date headers, and the same pending/complete style as TodayTab.
-// ================================================================
+/// HistoryTab with dynamic gradients and grouping tasks by date.
 class HistoryTab extends StatelessWidget {
   final List<Task> tasks;
   final Function(Task, Task) onUpdateTask;
@@ -861,62 +957,29 @@ class HistoryTab extends StatelessWidget {
       slivers: [
         SliverList(
           delegate: SliverChildBuilderDelegate(
-                (context, index) {
+                (ctx, index) {
               final date = groupedTasks.keys.elementAt(index);
               final dateTasks = groupedTasks[date]!;
               final completedTasks = dateTasks.where((t) => t.isCompleted).toList();
               final pendingTasks = dateTasks.where((t) => !t.isCompleted).toList();
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // TEAL GRADIENT for date header
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16.0),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          // Teal 200 -> Teal 100
-                          Color(0xFF80CBC4),
-                          Color(0xFFB2DFDB),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(16),
-                        topRight: Radius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      DateFormat('yyyy-MM-dd - EEEE').format(date),
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  // Then the sections for pending/completed inside the same day
+                  _buildDateHeader(context, date),
                   if (pendingTasks.isNotEmpty)
                     _buildTaskSection(
+                      context,
                       'Pending',
                       pendingTasks,
                       false,
-                      context,
-                      gradientColors: [
-                        Color(0xFFB2EBF2), // same as "Pending" in TodayTab
-                        Color(0xFFE0F7FA),
-                      ],
-                      borderColor: Colors.cyan,
                     ),
                   if (completedTasks.isNotEmpty)
                     _buildTaskSection(
+                      context,
                       'Completed',
                       completedTasks,
                       true,
-                      context,
-                      gradientColors: [
-                        Color(0xFFC8E6C9), // same as "Completed" in TodayTab
-                        Color(0xFFE8F5E9),
-                      ],
-                      borderColor: Colors.green,
                     ),
                   const Divider(height: 32),
                 ],
@@ -929,24 +992,57 @@ class HistoryTab extends StatelessWidget {
     );
   }
 
-  Map<DateTime, List<Task>> _groupTasksByDate(List<Task> tasks) {
-    final map = <DateTime, List<Task>>{};
-    for (var task in tasks) {
-      final date = DateTime(task.date.year, task.date.month, task.date.day);
-      map.putIfAbsent(date, () => []).add(task);
-    }
-    final sortedKeys = map.keys.toList()..sort((a, b) => b.compareTo(a));
-    return Map.fromEntries(sortedKeys.map((key) => MapEntry(key, map[key]!)));
+  Widget _buildDateHeader(BuildContext context, DateTime date) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    // For the date header, we previously used teal gradient in light mode.
+    final List<Color> headerColors = isDarkMode
+        ? const [Color(0xFF424242), Color(0xFF303030)]
+        : const [Color(0xFF80CBC4), Color(0xFFB2DFDB)];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: headerColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+        ),
+      ),
+      child: Text(
+        DateFormat('yyyy-MM-dd - EEEE').format(date),
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          color: Colors.white,
+        ),
+      ),
+    );
   }
 
   Widget _buildTaskSection(
+      BuildContext context,
       String title,
       List<Task> tasks,
       bool isCompleted,
-      BuildContext context, {
-        required List<Color> gradientColors,
-        required Color borderColor,
-      }) {
+      ) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // Choose gradient and border color
+    final List<Color> gradientColors = isCompleted
+        ? (isDarkMode
+        ? const [Color(0xFF388E3C), Color(0xFF2E7D32)]
+        : const [Color(0xFFC8E6C9), Color(0xFFE8F5E9)])
+        : (isDarkMode
+        ? const [Color(0xFF37474F), Color(0xFF455A64)]
+        : const [Color(0xFFB2EBF2), Color(0xFFE0F7FA)]);
+
+    final Color borderColor = isCompleted
+        ? (isDarkMode ? Colors.lightGreenAccent : Colors.green)
+        : (isDarkMode ? Colors.tealAccent : Colors.cyan);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -966,33 +1062,43 @@ class HistoryTab extends StatelessWidget {
             padding: const EdgeInsets.all(12.0),
             child: Text(
               title,
-              style:
-              Theme.of(context).textTheme.titleMedium?.copyWith(color: borderColor),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
-          ...tasks.map((task) => _buildTaskItem(task, isCompleted, context)).toList(),
+          ...tasks.map((task) => _buildTaskItem(context, task, isCompleted)).toList(),
         ],
       ),
     );
   }
 
-  Widget _buildTaskItem(Task task, bool isCompleted, BuildContext context) {
+  Widget _buildTaskItem(BuildContext context, Task task, bool isCompleted) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color cardColor = isCompleted
+        ? (isDarkMode ? Colors.green[800]! : Colors.green[100]!)
+        : (isDarkMode ? Colors.blueGrey[800]! : Colors.cyan[100]!);
+
     return AnimatedTaskCard(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
         child: Card(
-          color: isCompleted ? Colors.green[100] : Colors.cyan[100],
+          color: cardColor,
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: ListTile(
             leading: Icon(
               isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
-              color: isCompleted ? Colors.green : Colors.grey,
+              color: isCompleted ? Colors.greenAccent : Colors.white,
             ),
             title: Text(
               task.name,
               style: TextStyle(
                 decoration: isCompleted ? TextDecoration.lineThrough : null,
+                color: Colors.white,
               ),
             ),
             onTap: () {
@@ -1007,12 +1113,20 @@ class HistoryTab extends StatelessWidget {
       ),
     );
   }
+
+  Map<DateTime, List<Task>> _groupTasksByDate(List<Task> tasks) {
+    final map = <DateTime, List<Task>>{};
+    for (final task in tasks) {
+      final date = DateTime(task.date.year, task.date.month, task.date.day);
+      map.putIfAbsent(date, () => []).add(task);
+    }
+    // Sort dates descending
+    final sortedKeys = map.keys.toList()..sort((a, b) => b.compareTo(a));
+    return Map.fromEntries(sortedKeys.map((key) => MapEntry(key, map[key]!)));
+  }
 }
 
-// ================================================================
-// FUTURE TAB
-// Uses a purple gradient for future tasks.
-// ================================================================
+/// FutureTab with dynamic purple gradient grouping future tasks by date.
 class FutureTab extends StatelessWidget {
   final List<Task> tasks;
   final Function(Task) onDeleteTask;
@@ -1030,35 +1144,10 @@ class FutureTab extends StatelessWidget {
       slivers: [
         SliverList(
           delegate: SliverChildBuilderDelegate(
-                (context, index) {
+                (ctx, index) {
               final date = groupedTasks.keys.elementAt(index);
               final dateTasks = groupedTasks[date]!;
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  // Purple gradient
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFFD1C4E9), // Deep Purple 100
-                      Color(0xFFEDE7F6), // Deep Purple 50
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.deepPurple, width: 2),
-                ),
-                child: ExpansionTile(
-                  title: Text(
-                    DateFormat('yyyy-MM-dd - EEEE').format(date),
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(color: Colors.deepPurple),
-                  ),
-                  children: dateTasks.map((task) => _buildTaskItem(task, context)).toList(),
-                ),
-              );
+              return _buildDateExpansion(context, date, dateTasks);
             },
             childCount: groupedTasks.length,
           ),
@@ -1067,47 +1156,75 @@ class FutureTab extends StatelessWidget {
     );
   }
 
-  Map<DateTime, List<Task>> _groupTasksByDate(List<Task> tasks) {
-    final map = <DateTime, List<Task>>{};
-    for (var task in tasks) {
-      final date = DateTime(task.date.year, task.date.month, task.date.day);
-      map.putIfAbsent(date, () => []).add(task);
-    }
-    final sortedKeys = map.keys.toList()..sort();
-    return Map.fromEntries(sortedKeys.map((key) => MapEntry(key, map[key]!)));
+  Widget _buildDateExpansion(BuildContext context, DateTime date, List<Task> tasks) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // Purple gradient for future tasks
+    final List<Color> dateGradientColors = isDarkMode
+        ? const [Color(0xFF5E35B1), Color(0xFF4527A0)]
+        : const [Color(0xFFD1C4E9), Color(0xFFEDE7F6)];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: dateGradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.deepPurple, width: 2),
+      ),
+      child: ExpansionTile(
+        collapsedIconColor: Colors.white,
+        iconColor: Colors.white,
+        title: Text(
+          DateFormat('yyyy-MM-dd - EEEE').format(date),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white),
+        ),
+        children: tasks.map((task) => _buildTaskItem(context, task)).toList(),
+      ),
+    );
   }
 
-  Widget _buildTaskItem(Task task, BuildContext context) {
+  Widget _buildTaskItem(BuildContext context, Task task) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color cardColor =
+    isDarkMode ? Colors.deepPurple[700]! : Colors.deepPurple[100]!;
+
     return AnimatedTaskCard(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
         child: Card(
-          color: Colors.deepPurple[100],
+          color: cardColor,
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: ListTile(
-            leading: const Icon(Icons.event, color: Colors.deepPurple),
+            leading: const Icon(Icons.event, color: Colors.white),
             title: Text(
               task.name,
               style: TextStyle(
                 decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                color: Colors.white,
               ),
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
+              icon: const Icon(Icons.delete, color: Colors.white),
               onPressed: () async {
                 final confirmed = await showDialog<bool>(
                   context: context,
-                  builder: (context) => AlertDialog(
+                  builder: (ctx) => AlertDialog(
                     title: const Text('Confirm Deletion'),
                     content: const Text('Are you sure you want to delete this task?'),
                     actions: [
                       TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
+                        onPressed: () => Navigator.of(ctx).pop(false),
                         child: const Text('Cancel'),
                       ),
                       TextButton(
-                        onPressed: () => Navigator.of(context).pop(true),
+                        onPressed: () => Navigator.of(ctx).pop(true),
                         child: const Text('Delete'),
                       ),
                     ],
@@ -1122,5 +1239,16 @@ class FutureTab extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Map<DateTime, List<Task>> _groupTasksByDate(List<Task> tasks) {
+    final map = <DateTime, List<Task>>{};
+    for (var task in tasks) {
+      final date = DateTime(task.date.year, task.date.month, task.date.day);
+      map.putIfAbsent(date, () => []).add(task);
+    }
+    // Sort ascending for future tasks
+    final sortedKeys = map.keys.toList()..sort();
+    return Map.fromEntries(sortedKeys.map((key) => MapEntry(key, map[key]!)));
   }
 }
