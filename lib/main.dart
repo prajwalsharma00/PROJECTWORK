@@ -25,14 +25,30 @@ class TodoApp extends StatelessWidget {
       builder: (context, currentMode, _) {
         return MaterialApp(
           title: 'Todo List',
-          // Light theme
+
+          //
+          // ====================
+          //      LIGHT THEME
+          // ====================
           theme: ThemeData(
             brightness: Brightness.light,
             primarySwatch: Colors.blue,
             scaffoldBackgroundColor: Colors.grey[50],
             visualDensity: VisualDensity.adaptivePlatformDensity,
+
+            // Override the text theme so the default text color is black in light mode.
+            textTheme: ThemeData.light().textTheme.copyWith(
+              bodyLarge: const TextStyle(color: Colors.black),
+              bodyMedium: const TextStyle(color: Colors.black87),
+              titleLarge: const TextStyle(color: Colors.black),
+              titleMedium: const TextStyle(color: Colors.black87),
+            ),
           ),
-          // Dark theme with improved background and text colors
+
+          //
+          // ====================
+          //      DARK THEME
+          // ====================
           darkTheme: ThemeData(
             brightness: Brightness.dark,
             scaffoldBackgroundColor: const Color(0xFF121212),
@@ -41,13 +57,13 @@ class TodoApp extends StatelessWidget {
             ),
             cardColor: const Color(0xFF2A2A2A),
             textTheme: ThemeData.dark().textTheme.copyWith(
-              // Adjust as desired for better contrast
               bodyLarge: const TextStyle(color: Colors.white),
               bodyMedium: const TextStyle(color: Colors.white70),
               titleLarge: const TextStyle(color: Colors.white),
               titleMedium: const TextStyle(color: Colors.white70),
             ),
           ),
+
           themeMode: currentMode,
           debugShowCheckedModeBanner: false,
           home: const SplashScreen(),
@@ -786,7 +802,7 @@ class TodayTab extends StatelessWidget {
       }) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    // Choose gradient and border color based on isCompleted and theme mode.
+    // Choose gradient and border color based on isCompleted + theme mode
     final List<Color> gradientColors = isCompleted
         ? (isDarkMode
         ? const [Color(0xFF388E3C), Color(0xFF2E7D32)]
@@ -818,15 +834,22 @@ class TodayTab extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             child: Text(
               title,
+              // Force black in light mode, white in dark mode:
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: borderColor,
+                color: isDarkMode ? Colors.white : Colors.black,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
           if (tasks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text('No tasks found'),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'No tasks found',
+                style: TextStyle(
+                  color: isDarkMode ? Colors.white : Colors.black,
+                ),
+              ),
             )
           else
             ...tasks.map((task) => _buildTaskItem(task, isCompleted, context))
@@ -888,7 +911,10 @@ class TodayTab extends StatelessWidget {
               leading: IconButton(
                 icon: Icon(
                   isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: isCompleted ? Colors.greenAccent : Colors.white,
+                  // Completed => green accent in dark mode or green in light.
+                  color: isCompleted
+                      ? (isDarkMode ? Colors.greenAccent : Colors.green)
+                      : (isDarkMode ? Colors.white : Colors.black),
                 ),
                 onPressed: () {
                   final updatedTask = task.copyWith(
@@ -903,11 +929,12 @@ class TodayTab extends StatelessWidget {
                 style: TextStyle(
                   decoration: isCompleted ? TextDecoration.lineThrough : null,
                   fontSize: 16,
-                  color: Colors.white,
+                  color: isDarkMode ? Colors.white : Colors.black,
                 ),
               ),
               trailing: IconButton(
-                icon: const Icon(Icons.delete, color: Colors.white),
+                icon: Icon(Icons.delete,
+                    color: isDarkMode ? Colors.white : Colors.black),
                 onPressed: () async {
                   final confirmed = await showDialog<bool>(
                     context: context,
@@ -1068,7 +1095,18 @@ class HistoryTab extends StatelessWidget {
               ),
             ),
           ),
-          ...tasks.map((task) => _buildTaskItem(context, task, isCompleted)).toList(),
+          if (tasks.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Text(
+                'No tasks found',
+                style: TextStyle(
+                  color: isDarkMode ? Colors.white : Colors.black,
+                ),
+              ),
+            )
+          else
+            ...tasks.map((task) => _buildTaskItem(context, task, isCompleted)).toList(),
         ],
       ),
     );
@@ -1092,13 +1130,15 @@ class HistoryTab extends StatelessWidget {
           child: ListTile(
             leading: Icon(
               isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
-              color: isCompleted ? Colors.greenAccent : Colors.white,
+              color: isCompleted
+                  ? (isDarkMode ? Colors.greenAccent : Colors.green)
+                  : (isDarkMode ? Colors.white : Colors.black),
             ),
             title: Text(
               task.name,
               style: TextStyle(
                 decoration: isCompleted ? TextDecoration.lineThrough : null,
-                color: Colors.white,
+                color: isDarkMode ? Colors.white : Colors.black,
               ),
             ),
             onTap: () {
@@ -1202,16 +1242,16 @@ class FutureTab extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           child: ListTile(
-            leading: const Icon(Icons.event, color: Colors.white),
+            leading: Icon(Icons.event, color: isDarkMode ? Colors.white : Colors.black),
             title: Text(
               task.name,
               style: TextStyle(
                 decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                color: Colors.white,
+                color: isDarkMode ? Colors.white : Colors.black,
               ),
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.delete, color: Colors.white),
+              icon: Icon(Icons.delete, color: isDarkMode ? Colors.white : Colors.black),
               onPressed: () async {
                 final confirmed = await showDialog<bool>(
                   context: context,
