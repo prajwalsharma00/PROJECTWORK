@@ -17,8 +17,10 @@ class TodoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Todo List',
+      // We set a light grey background to keep everything bright, clean, and readable.
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        scaffoldBackgroundColor: Colors.grey[50],
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       home: const TodoHomePage(),
@@ -241,7 +243,8 @@ class _TodoHomePageState extends State<TodoHomePage>
           dateStr = "0" + dateStr;
           print('Fixed 7-digit header to: $dateStr');
         }
-        final formattedDate = "${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}";
+        final formattedDate =
+            "${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}";
         currentDate = DateTime.tryParse(formattedDate);
         if (currentDate == null) {
           print('Error parsing header date: $formattedDate. Skipping header.');
@@ -276,8 +279,8 @@ class _TodoHomePageState extends State<TodoHomePage>
     } else {
       _pendingSyncTasks.add(newTask);
       setState(() => _hasPendingSync = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Task saved locally. Will sync when online')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Task saved locally. Will sync when online')));
     }
   }
 
@@ -313,8 +316,8 @@ class _TodoHomePageState extends State<TodoHomePage>
     } else {
       _pendingSyncTasks.add(updatedTask);
       setState(() => _hasPendingSync = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Update saved locally. Will sync when online')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Update saved locally. Will sync when online')));
     }
   }
 
@@ -335,6 +338,7 @@ class _TodoHomePageState extends State<TodoHomePage>
     final deletedTask = task.copyWith(isDeleted: true, lastUpdated: DateTime.now());
     setState(() {
       _allTasks.remove(task);
+      // Remove any pending sync items that match this task
       _pendingSyncTasks.removeWhere((t) =>
       t.name.trim().toLowerCase() == task.name.trim().toLowerCase() &&
           DateFormat('yyyyMMdd').format(t.date) ==
@@ -346,8 +350,8 @@ class _TodoHomePageState extends State<TodoHomePage>
     } else {
       _pendingSyncTasks.add(deletedTask);
       setState(() => _hasPendingSync = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Deletion saved locally. Will sync when online')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Deletion saved locally. Will sync when online')));
     }
   }
 
@@ -394,8 +398,22 @@ class _TodoHomePageState extends State<TodoHomePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // APP BAR WITH A PASTEL CYAN GRADIENT
       appBar: AppBar(
         title: const Text('Todo List'),
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                // Cyan 200 -> Cyan 50
+                Color(0xFF80DEEA),
+                Color(0xFFE0F7FA),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -437,7 +455,6 @@ class _TodoHomePageState extends State<TodoHomePage>
               tasks: _getHistoryTasks(),
               onUpdateTask: _updateTask,
             ),
-            // For FutureTab, pass the onDeleteTask callback and remove the update (edit) functionality.
             FutureTab(
               tasks: _getFutureTasks(),
               onDeleteTask: _deleteTask,
@@ -524,6 +541,53 @@ class _TodoHomePageState extends State<TodoHomePage>
   }
 }
 
+// ================================================================
+// ANIMATED TASK CARD
+// Provides a playful scale + opacity transition for each task card.
+// ================================================================
+class AnimatedTaskCard extends StatefulWidget {
+  final Widget child;
+  const AnimatedTaskCard({Key? key, required this.child}) : super(key: key);
+
+  @override
+  _AnimatedTaskCardState createState() => _AnimatedTaskCardState();
+}
+
+class _AnimatedTaskCardState extends State<AnimatedTaskCard> {
+  double _scale = 0.95;
+  double _opacity = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Delay the start of the animation slightly so it doesn't clash with list build transitions.
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        setState(() {
+          _scale = 1.0;
+          _opacity = 1.0;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _opacity,
+      duration: const Duration(milliseconds: 500),
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 500),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ================================================================
+// TASK MODEL
+// ================================================================
 class Task {
   final String name;
   final DateTime date;
@@ -583,6 +647,10 @@ class Task {
   }
 }
 
+// ================================================================
+// TODAY TAB
+// Uses a cyan gradient for pending tasks, green gradient for completed tasks.
+// ================================================================
 class TodayTab extends StatelessWidget {
   final List<Task> tasks;
   final Function(BuildContext) onAddTask;
@@ -603,25 +671,57 @@ class TodayTab extends StatelessWidget {
     final pendingTasks = tasks.where((t) => !t.isCompleted).toList();
     return CustomScrollView(
       slivers: [
-        // Pending Tasks Section with a blue accent.
         SliverToBoxAdapter(
-          child: _buildTaskSection('Pending Tasks', pendingTasks, false, context, Colors.blue),
+          child: _buildTaskSection(
+            'Pending Tasks',
+            pendingTasks,
+            false,
+            context,
+            // Container gradient for "Pending Tasks" (Cyan)
+            gradientColors: [
+              Color(0xFFB2EBF2), // Cyan 100
+              Color(0xFFE0F7FA), // Cyan 50
+            ],
+            borderColor: Colors.cyan,
+          ),
         ),
-        // Completed Tasks Section with a green accent.
         SliverToBoxAdapter(
-          child: _buildTaskSection('Completed Tasks', completedTasks, true, context, Colors.green),
+          child: _buildTaskSection(
+            'Completed Tasks',
+            completedTasks,
+            true,
+            context,
+            // Container gradient for "Completed Tasks" (Green)
+            gradientColors: [
+              Color(0xFFC8E6C9), // Green 100
+              Color(0xFFE8F5E9), // Green 50
+            ],
+            borderColor: Colors.green,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildTaskSection(String title, List<Task> tasks, bool isCompleted, BuildContext context, Color accentColor) {
+  Widget _buildTaskSection(
+      String title,
+      List<Task> tasks,
+      bool isCompleted,
+      BuildContext context, {
+        required List<Color> gradientColors,
+        required Color borderColor,
+      }) {
     return Container(
       margin: const EdgeInsets.all(12.0),
+      // Joyful gradient with a visible border.
       decoration: BoxDecoration(
-        color: accentColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accentColor, width: 1.5),
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -631,7 +731,8 @@ class TodayTab extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             child: Text(
               title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: accentColor),
+              style:
+              Theme.of(context).textTheme.titleLarge?.copyWith(color: borderColor),
             ),
           ),
           if (tasks.isEmpty)
@@ -640,7 +741,7 @@ class TodayTab extends StatelessWidget {
               child: Text('No tasks found'),
             )
           else
-            ...tasks.map((task) => _buildTaskItem(task, isCompleted, context)).toList(),
+            ...tasks.map((task) => _buildTaskItem(task, isCompleted, context))
         ],
       ),
     );
@@ -660,7 +761,7 @@ class TodayTab extends StatelessWidget {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       confirmDismiss: (direction) async {
-        return await showDialog(
+        return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Confirm'),
@@ -679,55 +780,58 @@ class TodayTab extends StatelessWidget {
         );
       },
       onDismissed: (direction) => onDeleteTask(task),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: Card(
-          color: isCompleted ? Colors.green[100] : Colors.blue[100],
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: ListTile(
-            leading: IconButton(
-              icon: Icon(
-                isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
-                color: isCompleted ? Colors.green : Colors.grey,
+      child: AnimatedTaskCard(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Card(
+            // Subtle color for each card to match section gradient
+            color: isCompleted ? Colors.green[100] : Colors.cyan[100],
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: ListTile(
+              leading: IconButton(
+                icon: Icon(
+                  isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: isCompleted ? Colors.green : Colors.grey,
+                ),
+                onPressed: () {
+                  final updatedTask =
+                  task.copyWith(isCompleted: !isCompleted, lastUpdated: DateTime.now());
+                  onUpdateTask(task, updatedTask);
+                },
               ),
-              onPressed: () {
-                final updatedTask = task.copyWith(
-                    isCompleted: !isCompleted, lastUpdated: DateTime.now());
-                onUpdateTask(task, updatedTask);
-              },
-            ),
-            title: Text(
-              task.name,
-              style: TextStyle(
-                decoration: isCompleted ? TextDecoration.lineThrough : null,
-                fontSize: 16,
+              title: Text(
+                task.name,
+                style: TextStyle(
+                  decoration: isCompleted ? TextDecoration.lineThrough : null,
+                  fontSize: 16,
+                ),
               ),
-            ),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: () async {
-                final confirmed = await showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Confirm'),
-                    content: const Text('Are you sure you want to delete this task?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancel'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: const Text('Delete'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true) {
-                  onDeleteTask(task);
-                }
-              },
+              trailing: IconButton(
+                icon: const Icon(Icons.delete),
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Confirm'),
+                      content: const Text('Are you sure you want to delete this task?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    onDeleteTask(task);
+                  }
+                },
+              ),
             ),
           ),
         ),
@@ -736,14 +840,20 @@ class TodayTab extends StatelessWidget {
   }
 }
 
+// ================================================================
+// HISTORY TAB
+// Uses a teal gradient for date headers, and the same pending/complete style as TodayTab.
+// ================================================================
 class HistoryTab extends StatelessWidget {
   final List<Task> tasks;
   final Function(Task, Task) onUpdateTask;
+
   const HistoryTab({
     super.key,
     required this.tasks,
     required this.onUpdateTask,
   });
+
   @override
   Widget build(BuildContext context) {
     final groupedTasks = _groupTasksByDate(tasks);
@@ -759,20 +869,55 @@ class HistoryTab extends StatelessWidget {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Date header with a themed color.
+                  // TEAL GRADIENT for date header
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16.0),
-                    color: Colors.orange[200],
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          // Teal 200 -> Teal 100
+                          Color(0xFF80CBC4),
+                          Color(0xFFB2DFDB),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                      ),
+                    ),
                     child: Text(
                       DateFormat('yyyy-MM-dd - EEEE').format(date),
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
+                  // Then the sections for pending/completed inside the same day
                   if (pendingTasks.isNotEmpty)
-                    _buildTaskSection('Pending', pendingTasks, false, context, Colors.orange),
+                    _buildTaskSection(
+                      'Pending',
+                      pendingTasks,
+                      false,
+                      context,
+                      gradientColors: [
+                        Color(0xFFB2EBF2), // same as "Pending" in TodayTab
+                        Color(0xFFE0F7FA),
+                      ],
+                      borderColor: Colors.cyan,
+                    ),
                   if (completedTasks.isNotEmpty)
-                    _buildTaskSection('Completed', completedTasks, true, context, Colors.green),
+                    _buildTaskSection(
+                      'Completed',
+                      completedTasks,
+                      true,
+                      context,
+                      gradientColors: [
+                        Color(0xFFC8E6C9), // same as "Completed" in TodayTab
+                        Color(0xFFE8F5E9),
+                      ],
+                      borderColor: Colors.green,
+                    ),
                   const Divider(height: 32),
                 ],
               );
@@ -794,22 +939,35 @@ class HistoryTab extends StatelessWidget {
     return Map.fromEntries(sortedKeys.map((key) => MapEntry(key, map[key]!)));
   }
 
-  Widget _buildTaskSection(String title, List<Task> tasks, bool isCompleted, BuildContext context, Color accentColor) {
+  Widget _buildTaskSection(
+      String title,
+      List<Task> tasks,
+      bool isCompleted,
+      BuildContext context, {
+        required List<Color> gradientColors,
+        required Color borderColor,
+      }) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: accentColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accentColor, width: 1.5),
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Section title
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: accentColor),
+              style:
+              Theme.of(context).textTheme.titleMedium?.copyWith(color: borderColor),
             ),
           ),
           ...tasks.map((task) => _buildTaskItem(task, isCompleted, context)).toList(),
@@ -819,44 +977,52 @@ class HistoryTab extends StatelessWidget {
   }
 
   Widget _buildTaskItem(Task task, bool isCompleted, BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: Card(
-        color: isCompleted ? Colors.green[100] : Colors.orange[100],
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        child: ListTile(
-          leading: Icon(
-            isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: isCompleted ? Colors.green : Colors.grey,
-          ),
-          title: Text(
-            task.name,
-            style: TextStyle(
-              decoration: isCompleted ? TextDecoration.lineThrough : null,
+    return AnimatedTaskCard(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+        child: Card(
+          color: isCompleted ? Colors.green[100] : Colors.cyan[100],
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ListTile(
+            leading: Icon(
+              isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: isCompleted ? Colors.green : Colors.grey,
             ),
+            title: Text(
+              task.name,
+              style: TextStyle(
+                decoration: isCompleted ? TextDecoration.lineThrough : null,
+              ),
+            ),
+            onTap: () {
+              final updatedTask = task.copyWith(
+                isCompleted: !isCompleted,
+                lastUpdated: DateTime.now(),
+              );
+              onUpdateTask(task, updatedTask);
+            },
           ),
-          onTap: () {
-            final updatedTask = task.copyWith(
-              isCompleted: !isCompleted,
-              lastUpdated: DateTime.now(),
-            );
-            onUpdateTask(task, updatedTask);
-          },
         ),
       ),
     );
   }
 }
 
+// ================================================================
+// FUTURE TAB
+// Uses a purple gradient for future tasks.
+// ================================================================
 class FutureTab extends StatelessWidget {
   final List<Task> tasks;
   final Function(Task) onDeleteTask;
+
   const FutureTab({
     super.key,
     required this.tasks,
     required this.onDeleteTask,
   });
+
   @override
   Widget build(BuildContext context) {
     final groupedTasks = _groupTasksByDate(tasks);
@@ -870,14 +1036,25 @@ class FutureTab extends StatelessWidget {
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.purple.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.purple, width: 1.5),
+                  // Purple gradient
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFFD1C4E9), // Deep Purple 100
+                      Color(0xFFEDE7F6), // Deep Purple 50
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.deepPurple, width: 2),
                 ),
                 child: ExpansionTile(
                   title: Text(
                     DateFormat('yyyy-MM-dd - EEEE').format(date),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.purple),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(color: Colors.deepPurple),
                   ),
                   children: dateTasks.map((task) => _buildTaskItem(task, context)).toList(),
                 ),
@@ -901,48 +1078,46 @@ class FutureTab extends StatelessWidget {
   }
 
   Widget _buildTaskItem(Task task, BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: Card(
-        color: Colors.purple[100],
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        child: ListTile(
-          leading: const Icon(
-            Icons.event,
-            color: Colors.purple,
-          ),
-          title: Text(
-            task.name,
-            style: TextStyle(
-              decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+    return AnimatedTaskCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+        child: Card(
+          color: Colors.deepPurple[100],
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ListTile(
+            leading: const Icon(Icons.event, color: Colors.deepPurple),
+            title: Text(
+              task.name,
+              style: TextStyle(
+                decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+              ),
             ),
-          ),
-          // No update/edit action in the Future section; only deletion is allowed.
-          trailing: IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            onPressed: () async {
-              final confirmed = await showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Confirm Deletion'),
-                  content: const Text('Are you sure you want to delete this task?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Delete'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirmed == true) {
-                onDeleteTask(task);
-              }
-            },
+            trailing: IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Confirm Deletion'),
+                    content: const Text('Are you sure you want to delete this task?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  onDeleteTask(task);
+                }
+              },
+            ),
           ),
         ),
       ),
